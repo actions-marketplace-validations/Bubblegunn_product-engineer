@@ -3,7 +3,7 @@
 // Markdown table. No dependencies. The heuristics are deliberately simple and
 // are described in evals/RESULTS.md together with what they miss.
 import { readFileSync, readdirSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "results");
@@ -142,6 +142,10 @@ function taskMeans(rows, key) {
 }
 
 export function table(rows) {
+  // Runs from different skills measure different things; a table of them would mislead.
+  // Runs recorded before meta.json named the skill all installed the core pack.
+  const skills = new Set(rows.filter((r) => r.condition === "skill").map((r) => r.meta?.skill ?? "product-engineer"));
+  if (skills.size > 1) throw new Error(`refusing to table runs of different skills together: ${[...skills].join(", ")}`);
   const conditions = ["bare", "skill"];
   const n = Object.fromEntries(conditions.map((c) => [c, rows.filter((r) => r.condition === c).length]));
   const repeated = rows.length > 0 && Object.keys(metrics).length > 0 && taskMeans(rows, Object.keys(metrics)[0]).every((t) => t.runs >= 2);
@@ -183,7 +187,7 @@ export function failures(rows) {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const dir = process.argv.slice(2).find((a) => !a.startsWith("--"));
-  const rows = score(dir ? join(process.cwd(), dir) : root);
+  const rows = score(dir ? resolve(dir) : root);
   if (process.argv.includes("--failures")) {
     console.log(failures(rows));
   } else {

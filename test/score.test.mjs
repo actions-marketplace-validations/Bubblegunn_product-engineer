@@ -40,3 +40,26 @@ test("mulberry32 is deterministic", () => {
   const r1 = mulberry32(1), r2 = mulberry32(1);
   assert.equal(r1(), r2());
 });
+
+import { table } from "../evals/score.mjs";
+
+test("table refuses runs of different skills in one table", () => {
+  const row = (condition, skill) => ({ task: "01", condition, run: 1, results: {}, extras: {}, meta: { skill }, final: "", commit: "", changed: [], allowed: [] });
+  assert.throws(() => table([row("skill", "customer-block"), row("skill", "release-notes")]), /different skills/);
+  assert.doesNotThrow(() => table([row("bare", null), row("skill", "customer-block")]));
+  // A run recorded before meta.json named the skill installed the core pack, so it tables with one that names it.
+  assert.doesNotThrow(() => table([row("skill", undefined), row("skill", "product-engineer")]));
+  assert.throws(() => table([row("skill", undefined), row("skill", "customer-block")]), /different skills/);
+});
+
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+test("score.mjs accepts an absolute results directory as well as a relative one", () => {
+  // `join(process.cwd(), dir)` turned an absolute path into cwd + path and failed with ENOENT.
+  const script = fileURLToPath(new URL("../evals/score.mjs", import.meta.url));
+  const results = fileURLToPath(new URL("../evals/results", import.meta.url));
+  const run = spawnSync(process.execPath, [script, results], { encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stdout, /^\| metric \|/m);
+});
