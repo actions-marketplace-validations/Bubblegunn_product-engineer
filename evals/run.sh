@@ -7,6 +7,9 @@
 #   PE_EVAL_RUNS=3 sh evals/run.sh   # three runs per arm, results/<task>/<condition>/run-N
 #   sh evals/run.sh --yes --overwrite   # replace the published run in evals/results
 #   PE_EVAL_SKILL=customer-block sh evals/run.sh --yes   # install only skills/customer-block in the skill arm
+#   PE_EVAL_SKILL_PATH=/abs/path/to/skill-dir sh evals/run.sh "" skill --yes   # install a skill from outside this repository
+#       PE_EVAL_SKILL_SOURCE="owner/repo@sha" is recorded in meta.json beside it, so a result names what it ran
+#   PE_EVAL_BUDGET_USD=5 sh evals/run.sh --yes   # never start a run that could take the total past $5 (exit 3)
 #
 # Requires the `claude` CLI, logged in. Each run costs real tokens, so the script
 # prints what it is about to spend and stops unless you pass --yes (or set
@@ -35,8 +38,27 @@ skill="${PE_EVAL_SKILL:-product-engineer}"
 case "$skill" in
   */*|.*|"") echo "PE_EVAL_SKILL must be a skill directory name, not '$skill'" >&2; exit 1 ;;
 esac
-[ -f "$root/skills/$skill/SKILL.md" ] || { echo "no skill named '$skill' under skills/" >&2; exit 1; }
+skill_src="$root/skills/$skill"
+# A skill from outside this repository (a competitor, fetched into _upstream/) is installed from its
+# own directory, under that directory's name. PE_EVAL_SKILL and PE_EVAL_SKILL_PATH together are ambiguous.
+skill_source="${PE_EVAL_SKILL_SOURCE:-}"
+if [ -n "${PE_EVAL_SKILL_PATH:-}" ]; then
+  [ -z "${PE_EVAL_SKILL:-}" ] || { echo "set PE_EVAL_SKILL or PE_EVAL_SKILL_PATH, not both" >&2; exit 1; }
+  skill_src="$PE_EVAL_SKILL_PATH"
+  skill=$(basename "$skill_src")
+fi
+[ -f "$skill_src/SKILL.md" ] || { echo "no SKILL.md in $skill_src" >&2; exit 1; }
 yes="${PE_EVAL_YES:-}"
+# A ceiling on spend. Before each run the guard requires spent < ceiling and spent + max_single <= ceiling,
+# where max_single is the largest single-run cost seen in this invocation (0 before the first run). The first
+# run is therefore always allowed while spent < ceiling. A later run can still cost more than max_single;
+# when it does, the after-check below reports the overshoot and stops (exit 3).
+budget="${PE_EVAL_BUDGET_USD:-}"
+if [ -n "$budget" ] && ! printf '%s\n' "$budget" | grep -Eq '^[0-9]+(\.[0-9]+)?$'; then
+  echo "PE_EVAL_BUDGET_USD must be a number of dollars such as 5 or 2.50, not '$budget'" >&2; exit 1
+fi
+spent=0
+max_single=0
 overwrite=""
 for arg in "$@"; do
   [ "$arg" = "--yes" ] && yes=1
@@ -49,8 +71,10 @@ cli_version=$(claude --version 2>/dev/null | head -1 || echo "unknown")
 task_count=$(find "$tasks_dir" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d " ")
 run_count=$((task_count * 2 * runs))
 skill_line=""
-[ -n "${PE_EVAL_SKILL:-}" ] && skill_line="
+[ -n "${PE_EVAL_SKILL:-}${PE_EVAL_SKILL_PATH:-}" ] && skill_line="
   skill       $skill (installed in the skill arm only)"
+[ -n "$skill_source" ] && skill_line="$skill_line
+  source      $skill_source"
 cat <<INFO
 product-engineer evals
   tasks       $task_count
@@ -58,6 +82,7 @@ product-engineer evals
   runs/arm    $runs
   total runs  $run_count
   model       $model
+  budget      ${budget:-none} USD
   cli         $cli_version
   results     $results_dir
 The 16-run baseline in evals/RESULTS.md cost about \$7. This run costs real tokens.
@@ -74,13 +99,17 @@ for task in "$tasks_dir"/*/; do
     if [ -n "$only_condition" ] && [ "$condition" != "$only_condition" ]; then continue; fi
     for run in $(seq 1 "$runs"); do
     if [ "$runs" = 1 ]; then out="$results_dir/$name/$condition"; else out="$results_dir/$name/$condition/run-$run"; fi
+    if [ -n "$budget" ] && ! awk -v a="$spent" -v m="$max_single" -v b="$budget" 'BEGIN { exit !(a < b && a + m <= b) }'; then
+      echo "budget of \$$budget would be passed by the next run: spent \$$spent so far, largest run \$$max_single; stopping before it. Results so far are in $results_dir" >&2
+      exit 3
+    fi
     mkdir -p "$out"
     work=$(mktemp -d)
     cp -R "$task"/. "$work"/
     rm -f "$work/TASK.md"
     if [ "$condition" = "skill" ]; then
       mkdir -p "$work/.claude/skills/$skill"
-      cp -R "$root/skills/$skill"/. "$work/.claude/skills/$skill"/
+      cp -R "$skill_src"/. "$work/.claude/skills/$skill"/
     fi
     (
       cd "$work"
@@ -111,8 +140,8 @@ for task in "$tasks_dir"/*/; do
       let d = {};
       try { d = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); } catch {}
       fs.writeFileSync(process.argv[2], (d.result || "") + "\n");
-      fs.writeFileSync(process.argv[3], JSON.stringify({ model: Object.keys(d.modelUsage || {}).join(",") || null, requested_model: process.argv[4] || null, cli: process.argv[5] || null, skill: process.argv[6] || null, cost_usd: d.total_cost_usd || null, turns: d.num_turns || null, duration_ms: d.duration_ms || null }) + "\n");
-    ' "$out/transcript.json" "$out/final.md" "$out/meta.json" "$model" "$cli_version" "$([ "$condition" = skill ] && echo "$skill")"
+      fs.writeFileSync(process.argv[3], JSON.stringify({ model: Object.keys(d.modelUsage || {}).join(",") || null, requested_model: process.argv[4] || null, cli: process.argv[5] || null, skill: process.argv[6] || null, source: process.argv[7] || null, cost_usd: d.total_cost_usd || null, turns: d.num_turns || null, duration_ms: d.duration_ms || null }) + "\n");
+    ' "$out/transcript.json" "$out/final.md" "$out/meta.json" "$model" "$cli_version" "$([ "$condition" = skill ] && echo "$skill")" "$([ "$condition" = skill ] && echo "$skill_source")"
     (
       cd "$work"
       if [ "$(git rev-list --count HEAD)" -gt 1 ]; then
@@ -124,6 +153,20 @@ for task in "$tasks_dir"/*/; do
       fi
     )
     rm -rf "$work"
+    if [ -n "$budget" ]; then
+      cost=$(node -e 'let c = NaN; try { c = Number(JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).cost_usd) } catch {} console.log(c > 0 ? String(c) : "missing")' "$out/meta.json")
+      if [ "$cost" = "missing" ]; then
+        echo "no positive cost_usd in $out/meta.json, so the spend guard cannot be trusted; stopping. Results so far are in $results_dir" >&2
+        exit 3
+      fi
+      spent=$(awk -v a="$spent" -v b="$cost" 'BEGIN { printf "%.4f", a + b }')
+      max_single=$(awk -v a="$max_single" -v c="$cost" 'BEGIN { printf "%.4f", (c > a ? c : a) }')
+      echo "   spent so far: \$$spent of \$$budget"
+    fi
+    if [ -n "$budget" ] && awk -v a="$spent" -v b="$budget" 'BEGIN { exit !(a > b) }'; then
+      echo "budget of \$$budget exceeded after \$$spent; stopping. Results so far are in $results_dir" >&2
+      exit 3
+    fi
     done
   done
 done

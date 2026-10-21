@@ -59,6 +59,10 @@ and CI refuses a commit where they differ.
 
 Both commands were run and verified; `claude plugin validate .` passes.
 
+## Codex and Cursor plugin manifests
+
+The repository carries `.codex-plugin/plugin.json` and `.cursor-plugin/plugin.json`. Each points at `./skills/`, in the layout other plugins for those apps use, and `npm test` checks their shape and that all four skills load from them. Installing through each app's plugin search has not been verified yet ([#32](https://github.com/Bubblegunn/product-engineer/issues/32)); until it is, the install this page already describes, `npx skills add Bubblegunn/product-engineer`, is the one that has been run.
+
 ## By hand
 
 Copy `skills/<skill>/` into `.claude/skills/`, `.agents/skills/`, or your agent's skills
@@ -112,6 +116,23 @@ token, so there the comment becomes a warning in the log and the check still run
 
 Inputs: `pr` (defaults to the event's pull request), `warn`, `comment`, `token`, and `body-file` (check a file instead of fetching the pull request; nothing is fetched or posted, which is how this repository's CI runs the Action on fixed text).
 
+Three more inputs:
+
+- `diff` is a git revision range such as `origin/${{ github.base_ref }}...HEAD`. It turns on `check --diff`, which also reads the change and warns where the message and the change disagree. The checkout step needs `fetch-depth: 0` so the range can be read. Only plain revision text is accepted; a value that starts with `-` or holds spaces or shell characters fails the step with exit 2.
+- `references` is `off`, `warn` or `error` and sets `check --references`. Empty keeps the default, `warn`.
+- `skip-authors` is a comma-separated list of logins, `dependabot[bot],renovate[bot]` by default. A pull request opened by one of them is not checked, and the step prints one notice line saying why. An empty string checks every pull request. (`author` overrides the login the step compares; it exists so this repository's CI can test the skip on a push event.)
+
+```yaml
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: Bubblegunn/product-engineer@v0
+        with:
+          diff: origin/${{ github.base_ref }}...HEAD
+          references: error
+```
+
 ## pre-commit
 
 `.pre-commit-config.yaml`:
@@ -119,7 +140,7 @@ Inputs: `pr` (defaults to the event's pull request), `warn`, `comment`, `token`,
 ```yaml
 repos:
   - repo: https://github.com/Bubblegunn/product-engineer
-    rev: v0.6.2
+    rev: v0.7.0
     hooks:
       - id: product-engineer-check
 ```
