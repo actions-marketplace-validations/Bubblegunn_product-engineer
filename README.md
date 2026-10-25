@@ -127,6 +127,9 @@ rather than a skill is in [`docs/cursor.md`](docs/cursor.md).
 The skills are text files and need nothing installed. The `product-engineer` command (`check`,
 `doctor`, the pre-commit entry) needs Node 22 or newer; the commit-msg hook itself is POSIX sh.
 
+For npm users, install the generated commit hook with `npx product-engineer hook install`; add `--prefill` to also install the `prepare-commit-msg` template (the `hook` command was contributed by
+[@Aaqibhafeezkhan](https://github.com/Aaqibhafeezkhan) in [#44](https://github.com/Bubblegunn/product-engineer/pull/44)).
+
 ## What the diff check costs
 
 `--diff` fires only when it can prove a mismatch, so the question that matters is how often
@@ -272,7 +275,7 @@ January 2022, as one of two founding engineers at Cendra, and as the sole author
 assistant: a commit convention
 that explains every change to a non-technical reader, a definition of done that means
 watching the thing behave, and the habit of writing down what was deliberately not built
-([The feature I chose not to ship](https://efe-genc-portfolio.vercel.app/writing/the-feature-i-chose-not-to-ship/)).
+([The feature I chose not to ship](https://efegenc.me/writing/the-feature-i-chose-not-to-ship/)).
 
 ## Contributing
 

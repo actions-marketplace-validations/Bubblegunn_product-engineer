@@ -2,13 +2,13 @@
   "name": "bubblegunn",
   "owner": {
     "name": "Efe Genc",
-    "url": "https://efe-genc-portfolio.vercel.app"
+    "url": "https://efegenc.me"
   },
   "description": "Efe Genc's agent skills, installable as Claude Code plugins.",
   "plugins": [
     {
       "name": "product-engineer",
-      "source": "./",
+      "source": "./plugin",
       "description": "Makes your agent think like a product engineer: customer outcome first, a plain-language block in every commit and PR, done means observed, name what you did not ship, no number without a count. Plus three subset skills: customer-block, done-means-observed and release-notes.",
       "category": "engineering",
       "keywords": [
